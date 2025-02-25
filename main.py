@@ -1,5 +1,6 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Request
 from chatbot import chatbot
+from calendar_service import calendar
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
@@ -9,12 +10,15 @@ import pathlib
 
 app = FastAPI()
 
-# OAuth Setup
-os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"  # Allow HTTP for local dev
-CLIENT_SECRETS_FILE = pathlib.Path(__file__).parent / "client_secret.json"
-SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
-REDIRECT_URI = "http://localhost:3000"
+SCOPES = ["https://www.googleapis.com/auth/calendar"]
+REDIRECT_URI = "http://localhost:8000/auth/redirect"
 
+# Step 1: Initialize OAuth Flow
+flow = Flow.from_client_secrets_file(
+    "credentials.json",  # Path to the credentials.json file
+    scopes=SCOPES,
+    redirect_uri=REDIRECT_URI
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -22,14 +26,13 @@ app.add_middleware(
     allow_methods=["*"],  # Allow all HTTP methods (GET, POST, etc.)
     allow_headers=["*"],  # Allow all headers
 )
+
 class ChatRequest(BaseModel):
     user_input: str
-
 
 @app.get("/")
 def read_root():
     return {"Hello": "World"}
-
 
 @app.post("/chatbot/")
 async def talk_with_model(request: ChatRequest):
@@ -37,27 +40,24 @@ async def talk_with_model(request: ChatRequest):
     response = await chatbot.get_response(user_input)
     return response
 
-
-# Route to start OAuth login
 @app.get("/auth/login")
 async def login():
-    flow = Flow.from_client_secrets_file(
-        CLIENT_SECRETS_FILE,
-        scopes=SCOPES,
-        redirect_uri=REDIRECT_URI,
-    )
+    """Redirects user to Google OAuth login."""
     auth_url, _ = flow.authorization_url(prompt="consent")
     return RedirectResponse(auth_url)
 
-# Callback Route to exchange token
-@app.get("/auth/callback")
-async def auth_callback(code: str):
-    flow = Flow.from_client_secrets_file(
-        CLIENT_SECRETS_FILE,
-        scopes=SCOPES,
-        redirect_uri=REDIRECT_URI,
-    )
+@app.get("/auth/redirect")
+async def auth_callback(request: Request):
+    """Handles the OAuth callback and gets access token."""
+    code = request.query_params.get("code")
     flow.fetch_token(code=code)
-    
     credentials = flow.credentials
-    return {"access_token": credentials.token, "refresh_token": credentials.refresh_token}
+    access_token = credentials.token
+    # Redirect back to the frontend with the access token
+    redirect_url = f"http://localhost:3000?access_token={access_token}"
+    return RedirectResponse(url=redirect_url)
+
+@app.get("/calendar/")
+async def get_events(access_token: str):
+    events = await calendar.get_event_test_connection(access_token)
+    return events
