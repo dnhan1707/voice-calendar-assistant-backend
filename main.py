@@ -1,3 +1,4 @@
+# filepath: /C:/Users/Jack/voice-calendar-assistant/voice-calendar-assistant-backend/main.py
 from fastapi import FastAPI, Request
 from chatbot import chatbot
 from calendar_service import calendar
@@ -6,7 +7,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from google_auth_oauthlib.flow import Flow
 import os
-import pathlib
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -15,11 +15,27 @@ app = FastAPI()
 
 SCOPES = os.getenv("SCOPES").split(",")
 REDIRECT_URI = os.getenv("REDIRECT_URI")
-CLIENT_SECRETS_FILE = os.getenv("GOOGLE_CLIENT_SECRET_FILE")
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+
+# Create a credentials.json file dynamically
+credentials_content = {
+    "web": {
+        "client_id": GOOGLE_CLIENT_ID,
+        "client_secret": GOOGLE_CLIENT_SECRET,
+        "redirect_uris": [REDIRECT_URI],
+        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+        "token_uri": "https://oauth2.googleapis.com/token"
+    }
+}
+
+with open("credentials.json", "w") as f:
+    import json
+    json.dump(credentials_content, f)
 
 # Step 1: Initialize OAuth Flow
 flow = Flow.from_client_secrets_file(
-    CLIENT_SECRETS_FILE,  # Path to the credentials.json file
+    "credentials.json",  # Path to the dynamically created credentials.json file
     scopes=SCOPES,
     redirect_uri=REDIRECT_URI
 )
