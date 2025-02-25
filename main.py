@@ -7,15 +7,19 @@ from fastapi.responses import RedirectResponse
 from google_auth_oauthlib.flow import Flow
 import os
 import pathlib
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = FastAPI()
 
-SCOPES = ["https://www.googleapis.com/auth/calendar"]
-REDIRECT_URI = "http://localhost:8000/auth/redirect"
+SCOPES = os.getenv("SCOPES").split(",")
+REDIRECT_URI = os.getenv("REDIRECT_URI")
+CLIENT_SECRETS_FILE = os.getenv("GOOGLE_CLIENT_SECRET_FILE")
 
 # Step 1: Initialize OAuth Flow
 flow = Flow.from_client_secrets_file(
-    "credentials.json",  # Path to the credentials.json file
+    CLIENT_SECRETS_FILE,  # Path to the credentials.json file
     scopes=SCOPES,
     redirect_uri=REDIRECT_URI
 )
