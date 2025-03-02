@@ -1,16 +1,25 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from app.services.chatbotService import chatbot
 from app.services.calendarService import calendar
 from app.models import ChatRequest
 import json
+import os
+
+
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+TOKEN_URI = "https://oauth2.googleapis.com/token"
+
 
 router = APIRouter()
 
+
 @router.post("/chatbot/")
-async def talk_with_model(request: ChatRequest):
-    user_input = request.user_input  # Extract user_input correctly
-    access_token = request.access_token
-    refresh_token = request.refresh_token
+async def talk_with_model(request: Request):
+    body = await request.json()
+    user_input = body["user_input"]
+    access_token = body["access_token"]
+    refresh_token = body["refresh_token"]
     result = await chatbot.get_response(user_input)
     print(result)
     try:
@@ -20,21 +29,16 @@ async def talk_with_model(request: ChatRequest):
         raise HTTPException(status_code=400, detail="Invalid response from chatbot")
 
     if result["query_type"] == "date":
-        calendar_events = await calendar.get_events_by_date(
-            access_token, refresh_token, result["date"]
-        )
+        calendar_events =  await calendar.get_events_by_date(access_token, refresh_token, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, TOKEN_URI, result["date"])
         return await chatbot.discuss_about_calendar(calendar_events, user_input)
     elif result["query_type"] == "week":
-        calendar_events = await calendar.get_events_by_week(
-            access_token, refresh_token, result["start_date"]
-        )
+        calendar_events = await calendar.get_events_by_week(access_token, refresh_token, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, TOKEN_URI, result["start_date"])
         return await chatbot.discuss_about_calendar(calendar_events, user_input)
     elif result["query_type"] == "range":
-        calendar_events = await calendar.get_events_in_custom_range(
-            access_token, refresh_token, result["start_date"], result["end_date"]
-        )
+        calendar_events = await calendar.get_events_in_custom_range(access_token, refresh_token, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, TOKEN_URI, result["start_date"], result["end_date"])
         return await chatbot.discuss_about_calendar(calendar_events, user_input)
     elif result["query_type"] == "talk":
         return await chatbot.normal_discussion(user_input)
     else:
         return {"error": "Could not determine event query type"}
+

@@ -5,12 +5,13 @@ from dotenv import load_dotenv
 load_dotenv()
 
 api_key = os.getenv("OPENAI_API_KEY")
-client = OpenAI(api_key=api_key)
+client = OpenAI()
+client.api_key = api_key
 
 class ChatBot:
     def __init__(self):
-        self.prompt = '''
-           You are a natural language processor that classifies user requests to fetch calendar events. Analyze the user's input and classify it 
+         self.prompt = '''
+            You are a natural language processor that classifies user requests to fetch calendar events. Analyze the user's input and classify it 
             into one of the following query types, however you can still normally communicate in some cases:
 
             1. **"date"** → If the user asks for events on a specific day.
@@ -49,18 +50,32 @@ class ChatBot:
             ### **Output:**
         '''
 
+
     async def get_response(self, user_input: str) -> str:
         completion = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": self.prompt},
-                {"role": "user", "content": user_input}
+                    {"role": "system", "content": self.prompt},
+                    {
+                        "role": "user",
+                        "content": user_input
+                    }
+                ]
+        )
+        return completion.choices[0].message.content
+
+    async def normal_discussion(self, user_input: str) -> str:
+        completion = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "assistant", "content": "You are a helpful AI"},
+                {
+                    "role": "user",
+                    "content": user_input
+                }
             ]
         )
-        response_content = completion.choices[0].message.content
-        # Clean up the response content
-        response_content = response_content.replace("\\n", "").replace("\\", "")
-        return response_content
+        return completion.choices[0].message.content
 
     async def discuss_about_calendar(self, calendar_events, user_input: str) -> str:
         formatted_events = self.format_calendar_events(calendar_events)
@@ -68,9 +83,12 @@ class ChatBot:
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": f'Extract important information and reply user speech, which was {user_input}'},
-                {"role": "user", "content": f'Here are the events: {formatted_events}. Please simplify this and provide a meaningful response and answer in an easy to understand way'}
-            ]
-        )
+                    {
+                        "role": "user",
+                        "content": f'Here are the events: {formatted_events}. Please simplify this and provide a meaningful response.'
+                    }
+                ]
+            )
         return completion.choices[0].message.content
     
     @staticmethod

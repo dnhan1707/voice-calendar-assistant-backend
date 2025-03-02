@@ -1,24 +1,25 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routes import auth, calendar, chatbot
 from dotenv import load_dotenv
+from app.routes.chatbot import router as chatbot_router
+from app.routes.auth import router as auth_router  
+# from app.routes.calendar import router as calendar_router  
 
 load_dotenv()
 
 app = FastAPI()
 
-# CORS Middleware should be added before defining any routes
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Only allow frontend origin (not "*")
+    allow_origins=["http://localhost:3000"],  
     allow_credentials=True,
-    allow_methods=["*"],  # Allow all HTTP methods
-    allow_headers=["*"],  # Allow all headers
+    allow_methods=["*"],  
+    allow_headers=["*"],  
 )
 
-app.include_router(auth.router)
-# app.include_router(calendar.router)
-app.include_router(chatbot.router)
+# Include routers
+app.include_router(chatbot_router)
+app.include_router(auth_router)  
 
 @app.get("/")
 def read_root():
