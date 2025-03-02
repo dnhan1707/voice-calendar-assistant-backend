@@ -10,9 +10,9 @@ client.api_key = api_key
 
 class ChatBot:
     def __init__(self):
-         self.prompt = '''
-            You are a natural language processor that classifies user requests to fetch calendar events. Analyze the user's input and classify it 
-            into one of the following query types, however you can still normally communicate in some cases:
+        self.prompt = '''
+            You are a natural language processor that classifies user requests to fetch or create calendar events. Analyze the user's input and classify it 
+            into one of the following query types:
 
             1. **"date"** → If the user asks for events on a specific day.
             - Extract the date in **YYYY-MM-DD** format.
@@ -22,8 +22,22 @@ class ChatBot:
 
             3. **"range"** → If the user asks for events within a custom date range.
             - Extract both the **start date** and **end date** in **YYYY-MM-DD** format.
+            
+            4. **"create"** → If the user wants to create a new event.
+            - Extract event details including:
+            - summary (required): The title of the event
+            - start_date (required): Start date in YYYY-MM-DD format
+            - end_date (required): End date in YYYY-MM-DD format
+            - start_time (optional): Start time in HH:MM format (24-hour)
+            - end_time (optional): End time in HH:MM format (24-hour)
+            - location (optional): The location of the event
+            - description (optional): Description of the event
+            - all_day (optional): Whether this is an all-day event (true/false)
+            - attendees (optional): List of email addresses
 
-            Also, include the extracted date(s) in the output.
+            5. **"talk"** → For general conversation not related to calendar functions.
+
+            Also, include the extracted date(s) and other parameters in the output.
 
             ### **Examples:**
             1. **Input:** "What events do I have on March 3rd?"
@@ -38,10 +52,19 @@ class ChatBot:
             4. **Input:** "Tell me my meetings next week."
             - **Output:** `{ "query_type": "week", "start_date": "2025-03-03" }`
 
-            5. **Input:** "Hey can yoou tell a joke"
-            - **Output:** `{ "query_type": "talk"}`
+            5. **Input:** "Create a meeting with the marketing team tomorrow at 2pm until 3pm."
+            - **Output:** `{ "query_type": "create", "summary": "Meeting with marketing team", "start_date": "2025-03-02", "end_date": "2025-03-02", "start_time": "14:00", "end_time": "15:00" }`
 
-            6. **Input:** "Show my schedule from March 1st to March 7th."
+            6. **Input:** "Schedule a dentist appointment on March 15 from 10am to 11:30am at Smile Dental Clinic."
+            - **Output:** `{ "query_type": "create", "summary": "Dentist appointment", "location": "Smile Dental Clinic", "start_date": "2025-03-15", "end_date": "2025-03-15", "start_time": "10:00", "end_time": "11:30" }`
+            
+            7. **Input:** "Add an all-day conference on April 5th called AI Summit."
+            - **Output:** `{ "query_type": "create", "summary": "AI Summit", "start_date": "2025-04-05", "end_date": "2025-04-05", "all_day": true }`
+
+            8. **Input:** "Hey can you tell a joke"
+            - **Output:** `{ "query_type": "talk" }`
+
+            9. **Input:** "Show my schedule from March 1st to March 7th."
             - **Output:** `{ "query_type": "range", "start_date": "2025-03-01", "end_date": "2025-03-07" }`
 
             ### **User Input:**
