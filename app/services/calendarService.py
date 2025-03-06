@@ -163,4 +163,28 @@ class CalendarService:
 
         print(update_instance['updated'])
         
+    
+    async def get_event_by_name(self, access_token, refresh_token, client_id, client_secret, token_uri, 
+        name, max_results=10, time_min=None, exact_match=False):
+        service = self._get_calendar_service(access_token, refresh_token, client_id, client_secret, token_uri)
+
+        if not time_min:
+            time_min = datetime.datetime.utcnow().isoformat() + "Z"
+
+        events_result = service.events().list(
+            calendar="primary",
+            timeMin=time_min,
+            maxResults=max_results,
+            singleEvents=True,
+            orderBy="startTime",
+            q=name
+        ).execute()
+
+        items = events_result.get("items", [])
+        if exact_match and items:
+            items = [event for event in items if event.get("summary", "").lower() == name.lower()]
+        
+        return items
+        
+
 calendar = CalendarService()
