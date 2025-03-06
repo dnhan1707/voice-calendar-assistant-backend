@@ -148,4 +148,19 @@ class CalendarService:
 
         print(f"Event created: {created_event.get('htmlLink')}")
         return created_event
+    
+
+    async def delete_event(self, access_token, refresh_token, client_id, client_secret, token_uri, event_id):
+        service = self._get_calendar_service(access_token, refresh_token, client_id, client_secret, token_uri)
+
+        # First retrieve the instance from the API
+        instances = service.events().instances(calendarId='primary', eventId=event_id).execute()
+
+        # Select the instance to cancel
+        instance = instances['items'][0]
+        instance['status'] = 'cancelled'
+        update_instance = service.events().update(calendarId='primary', eventId=instance['id'], body=instance).execute()
+
+        print(update_instance['updated'])
+        
 calendar = CalendarService()
