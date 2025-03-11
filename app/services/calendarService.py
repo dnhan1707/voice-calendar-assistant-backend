@@ -184,7 +184,63 @@ class CalendarService:
         if exact_match and items:
             items = [event for event in items if event.get("summary", "").lower() == name.lower()]
         
+        # print(items)
         return items
+    
+
+    def _extract_minimal_event_info(self, events):
+        """Extract only essential event information to minimize tokens."""
+        if not events:
+            return []
         
+        minimal_events = []
+        for event in events:
+            # Get start info in a consistent format
+            start = event.get("start", {})
+            if "dateTime" in start:
+                # Format: "2025-03-15T10:00:00Z" -> "Mar 15, 10:00 AM"
+                start_dt = datetime.datetime.fromisoformat(start["dateTime"].replace('Z', '+00:00'))
+                start_str = start_dt.strftime("%b %d, %I:%M %p")
+            else:
+                # All-day event
+                start_str = f"{start.get('date', 'unknown')} (all-day)"
+                
+            # Create minimal event object
+            minimal_events.append({
+                "id": event.get("id"),
+                "title": event.get("summary", "Untitled"),
+                "time": start_str,
+                "location": event.get("location", "")[:30]  # Truncate long locations
+            })
+        
+        return minimal_events
+        
+    async def find_events_by_name_match(self, access_token, refresh_token, client_id, client_secret, token_uri, query, max_results=20):
+        """Get events and return minimal info to use with GPT for matching."""
+        service = self._get_calendar_service(access_token, refresh_token, client_id, client_secret, token_uri)
+        
+        # Look at upcoming events (next 30 days)
+        now = datetime.datetime.utcnow()
+        time_min = now.isoformat() + "Z"
+        time_max = (now + datetime.timedelta(days=30)).isoformat() + "Z"
+        
+        # Get calendar events
+        events_result = service.events().list(
+            calendarId="primary",
+            timeMin=time_min,
+            timeMax=time_max,
+            maxResults=max_results,
+            singleEvents=True,
+            orderBy="startTime"
+        ).execute()
+        # print(events_result)
+        # Extract minimal info for each event
+        events = self._extract_minimal_event_info(events_result.get("items", []))
+        # print(events)
+
+        return {
+            "original_query": query,
+            "events": events
+        }
 
 calendar = CalendarService()

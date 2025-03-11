@@ -55,6 +55,28 @@ async def talk_with_model(request: Request):
             end_date=result["end_date"])
         return await chatbot.discuss_about_calendar(calendar_events, user_input)
     
+    elif query_type == "find":
+        # Get events with minimal information
+        events_data = await calendar.find_events_by_name_match(
+            **common_params, 
+            query=user_input
+        )
+        
+        # Use GPT to find the best match
+        match_result = await chatbot.find_best_event_match(events_data, user_input)
+        print("Match result: ", match_result)
+        # If a match was found, get the full event details
+            # Optionally: Get full event details if needed
+            # full_event = await calendar.get_event_by_id(**common_params, event_id=match_result["event"]["id"])
+            # match_result["full_event"] = full_event
+        info = {
+            "success": True,
+            "message": f"Found event: {match_result['event']['title']} at {match_result['event']['time']}",
+            "event": match_result["event"],
+            "explanation": match_result.get("explanation")
+        }
+        return await chatbot.create_meaningful_response(info)
+    
     elif query_type == "create":
         # Validate required fields
         if not result.get("summary") or not result.get("start_date") or not result.get("end_date"):
@@ -98,3 +120,69 @@ async def talk_with_model(request: Request):
     
     else:
         return {"error": "Could not determine event query type"}
+    
+
+@router.post("/chatbot/test_calendar/")
+async def talk_with_model(request: Request):
+    body = await request.json()
+    user_input = body["user_input"]
+    access_token = body["access_token"]
+    refresh_token = body["refresh_token"]
+    
+    result = await chatbot.get_response(user_input)
+    print(result)
+    
+    try:
+        result = json.loads(result)
+        print("Result after json: ", result)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid response from chatbot")
+
+    # Common parameters for all calendar service calls
+    common_params = {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "client_id": GOOGLE_CLIENT_ID,
+        "client_secret": GOOGLE_CLIENT_SECRET,
+        "token_uri": TOKEN_URI
+    }
+
+    return await calendar.get_event_test_connection(**common_params)
+
+
+# @router.post("/chatbot/find_event/")
+# async def find_event_by_name(request: Request):
+#     body = await request.json()
+#     user_input = body["user_input"]
+#     access_token = body["access_token"]
+#     refresh_token = body["refresh_token"]
+    
+#     # Common parameters for all calendar service calls
+#     common_params = {
+#         "access_token": access_token,
+#         "refresh_token": refresh_token,
+#         "client_id": GOOGLE_CLIENT_ID,
+#         "client_secret": GOOGLE_CLIENT_SECRET,
+#         "token_uri": TOKEN_URI
+#     }
+    
+#     # Get events with minimal information
+#     events_data = await calendar.find_events_by_name_match(
+#         **common_params, 
+#         query=user_input
+#     )
+    
+#     # Use GPT to find the best match
+#     match_result = await chatbot.find_best_event_match(events_data, user_input)
+#     print("Match result: ", match_result)
+#     # If a match was found, get the full event details
+#         # Optionally: Get full event details if needed
+#         # full_event = await calendar.get_event_by_id(**common_params, event_id=match_result["event"]["id"])
+#         # match_result["full_event"] = full_event
+#     info = {
+#         "success": True,
+#         "message": f"Found event: {match_result['event']['title']} at {match_result['event']['time']}",
+#         "event": match_result["event"],
+#         "explanation": match_result.get("explanation")
+#     }
+#     return await chatbot.create_meaningful_response(info)
