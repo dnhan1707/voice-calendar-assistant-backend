@@ -2,7 +2,6 @@ from google_auth_oauthlib.flow import Flow
 import os
 import json
 from fastapi import HTTPException
-from fastapi.responses import RedirectResponse
 
 # Load environment variables
 SCOPES = os.getenv("SCOPES", "").split(",")

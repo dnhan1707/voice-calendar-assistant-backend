@@ -1,7 +1,6 @@
 from fastapi import APIRouter, HTTPException, Request
 from app.services.chatbotService import chatbot
 from app.services.calendarService import calendar
-from app.models import ChatRequest
 import json
 import os
 
@@ -65,10 +64,7 @@ async def talk_with_model(request: Request):
         # Use GPT to find the best match
         match_result = await chatbot.find_best_event_match(events_data, user_input)
         print("Match result: ", match_result)
-        # If a match was found, get the full event details
-            # Optionally: Get full event details if needed
-            # full_event = await calendar.get_event_by_id(**common_params, event_id=match_result["event"]["id"])
-            # match_result["full_event"] = full_event
+
         info = {
             "success": True,
             "message": f"Found event: {match_result['event']['title']} at {match_result['event']['time']}",
@@ -148,41 +144,3 @@ async def talk_with_model(request: Request):
     }
 
     return await calendar.get_event_test_connection(**common_params)
-
-
-# @router.post("/chatbot/find_event/")
-# async def find_event_by_name(request: Request):
-#     body = await request.json()
-#     user_input = body["user_input"]
-#     access_token = body["access_token"]
-#     refresh_token = body["refresh_token"]
-    
-#     # Common parameters for all calendar service calls
-#     common_params = {
-#         "access_token": access_token,
-#         "refresh_token": refresh_token,
-#         "client_id": GOOGLE_CLIENT_ID,
-#         "client_secret": GOOGLE_CLIENT_SECRET,
-#         "token_uri": TOKEN_URI
-#     }
-    
-#     # Get events with minimal information
-#     events_data = await calendar.find_events_by_name_match(
-#         **common_params, 
-#         query=user_input
-#     )
-    
-#     # Use GPT to find the best match
-#     match_result = await chatbot.find_best_event_match(events_data, user_input)
-#     print("Match result: ", match_result)
-#     # If a match was found, get the full event details
-#         # Optionally: Get full event details if needed
-#         # full_event = await calendar.get_event_by_id(**common_params, event_id=match_result["event"]["id"])
-#         # match_result["full_event"] = full_event
-#     info = {
-#         "success": True,
-#         "message": f"Found event: {match_result['event']['title']} at {match_result['event']['time']}",
-#         "event": match_result["event"],
-#         "explanation": match_result.get("explanation")
-#     }
-#     return await chatbot.create_meaningful_response(info)
