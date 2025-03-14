@@ -70,6 +70,8 @@ class ChatBot:
             10. **Input:** "Is there any Work on my schedule?"
             - **Output:** `{ "query_type": "find"}`
             
+            11. **Input** "Delete my work schedule on next Tuesday"
+            - **Output:** `{ "query_type": "delete"}` 
 
             ### **User Input:**
             "{user_input}"
