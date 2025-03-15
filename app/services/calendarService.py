@@ -21,9 +21,17 @@ class CalendarService:
     def _format_datetime(self, date_str, time_str=None, add_days=0):
         """Helper method to format date/time strings properly."""
         date_obj = datetime.datetime.strptime(date_str, "%Y-%m-%d")
-        if add_days:
+        
+        print(f"Original date: {date_obj.isoformat()}")
+        
+        # Add days if specified
+        if add_days > 0:
             date_obj = date_obj + datetime.timedelta(days=add_days)
+            print(f"After adding {add_days} days: {date_obj.isoformat()}")
             
+        result = date_obj.isoformat() + "Z" if not time_str else f"{date_obj.strftime('%Y-%m-%d')}T{time_str}"
+        print(f"Final formatted datetime: {result}")
+        
         if time_str:
             # If time is provided, combine date and time
             return f"{date_obj.strftime('%Y-%m-%d')}T{time_str}"
@@ -70,21 +78,83 @@ class CalendarService:
                 
         return time_str
     
-    async def _get_events(self, 
-                         service, 
-                         time_min=None, 
-                         time_max=None, 
-                         max_results=10, 
-                         q=None,
-                         calendar_id="primary"):
-        """Core method to get events with various filters."""
-        # Default to current time if not specified
-        if time_min is None:
-            time_min = datetime.datetime.utcnow().isoformat() + "Z"
+    # ===== CORE CALENDAR OPERATIONS =====
+    
+    async def get_events(self, time_range=None, query=None, max_results=10, id_only=False, minimal=False, **auth_params, ):
+        """
+        Core method for getting events with various filtering options.
+        
+        Args:
+            **auth_params: Authentication parameters (access_token, refresh_token, etc.)
+            time_range: Either a predefined range ('day', 'week', 'month', 'test') or a dict with 'start' and optional 'end'
+            query: Optional search query
+            max_results: Maximum results to return
+            id_only: If True, return only event IDs
+            minimal: If True, return minimal event info for GPT
             
-        # Build params dictionary, excluding None values
+        Returns:
+            List of events or event IDs depending on options
+        """
+        service = self._get_calendar_service(**auth_params)
+        
+        # Set up time parameters
+        now = datetime.datetime.utcnow()
+        time_min = now.isoformat() + "Z"
+        time_max = None
+        
+        # Handle different time range options
+        if time_range:
+            if isinstance(time_range, dict):
+                # Custom range with explicit dates
+                if 'date' in time_range:
+                    # Single day with 'date' key
+                    print("IN DATE")
+                    time_min = self._format_datetime(time_range['date'])
+                    time_max = self._format_datetime(time_range['date'], add_days=1)
+                elif 'start' in time_range and 'end' in time_range:
+                    # Custom range with start and end
+                    start_date = time_range['start']
+                    end_date = time_range['end']
+                    
+                    # Check if this is actually a single-day query (start == end)
+                    if start_date == end_date:
+                        print("Single day query detected with start=end")
+                        time_min = self._format_datetime(start_date)
+                        time_max = self._format_datetime(start_date, add_days=1)
+                    else:
+                        time_min = self._format_datetime(start_date)
+                        time_max = self._format_datetime(end_date)
+                elif 'start' in time_range:
+                    time_min = self._format_datetime(time_range['start'])
+                    if 'end' in time_range:
+                        time_max = self._format_datetime(time_range['end'])
+            else:
+                # Simple string presets
+                if time_range == 'test':
+                    # Just use default (now to unspecified future)
+                    pass
+                elif time_range == 'future':
+                    # Next 30 days
+                    time_max = (now + datetime.timedelta(days=30)).isoformat() + "Z"
+                elif time_range == 'today':
+                    # Just today
+                    today = now.strftime("%Y-%m-%d")
+                    time_min = self._format_datetime(today)
+                    time_max = self._format_datetime(today, add_days=1)
+                elif time_range == 'tomorrow':
+                    # Just tomorrow
+                    tomorrow = (now + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+                    time_min = self._format_datetime(tomorrow)
+                    time_max = self._format_datetime(tomorrow, add_days=1)
+                elif time_range == 'this_week':
+                    # This week
+                    today = now.strftime("%Y-%m-%d")
+                    time_min = self._format_datetime(today)
+                    time_max = self._format_datetime(today, add_days=7)
+
+        # Build params dictionary
         params = {
-            "calendarId": calendar_id,
+            "calendarId": "primary",
             "timeMin": time_min,
             "maxResults": max_results,
             "singleEvents": True,
@@ -94,269 +164,208 @@ class CalendarService:
         if time_max:
             params["timeMax"] = time_max
             
-        if q:
-            params["q"] = q
-            
+        if query:
+            params["q"] = query
+        
+        print(f'Params for calendaar: ', params)
+
+        # Get events
         events_result = service.events().list(**params).execute()
-        return events_result.get("items", [])
-
-    # ===== PUBLIC API METHODS =====
+        events = events_result.get("items", [])
+        print(f'Found events: ', events)
+        # Format the response based on options
+        if id_only:
+            return [event.get("id") for event in events if event.get("id")]
+        elif minimal:
+            minimal_events = self._extract_minimal_event_info(events)
+            return {
+                "original_query": query,
+                "events": minimal_events
+            }
+        else:
+            return events
     
-    async def get_event_test_connection(self, access_token, refresh_token, client_id, client_secret, token_uri):
-        """Test connection by getting a few upcoming events."""
-        service = self._get_calendar_service(access_token, refresh_token, client_id, client_secret, token_uri)
-        return await self._get_events(service)
-
-    async def get_events_by_date(self, access_token, refresh_token, client_id, client_secret, token_uri, date):
-        """Get events for a specific date."""
-        service = self._get_calendar_service(access_token, refresh_token, client_id, client_secret, token_uri)
-        start_of_day = self._format_datetime(date)
-        end_of_day = self._format_datetime(date, add_days=1)
-        return await self._get_events(service, time_min=start_of_day, time_max=end_of_day)
-
-    async def get_events_by_week(self, access_token, refresh_token, client_id, client_secret, token_uri, start_date):
-        """Get events for a week starting from the given date."""
-        service = self._get_calendar_service(access_token, refresh_token, client_id, client_secret, token_uri)
-        start_of_week = self._format_datetime(start_date)
-        end_of_week = self._format_datetime(start_date, add_days=7)
-        return await self._get_events(service, time_min=start_of_week, time_max=end_of_week)
-
-    async def get_events_in_custom_range(self, access_token, refresh_token, client_id, client_secret, token_uri, 
-                                         start_date, end_date):
-        """Get events within a custom date range."""
-        service = self._get_calendar_service(access_token, refresh_token, client_id, client_secret, token_uri)
-        start_time = self._format_datetime(start_date)
-        end_time = self._format_datetime(end_date)
-        return await self._get_events(service, time_min=start_time, time_max=end_time)
-    
-    async def get_event_by_name(self, access_token, refresh_token, client_id, client_secret, token_uri, 
-                               name, max_results=10, time_min=None, exact_match=False):
-        """Search for events by name/summary."""
-        service = self._get_calendar_service(access_token, refresh_token, client_id, client_secret, token_uri)
-        items = await self._get_events(service, time_min=time_min, max_results=max_results, q=name)
-        
-        # Filter for exact matches if requested
-        if exact_match and items:
-            items = [event for event in items if event.get("summary", "").lower() == name.lower()]
-        
-        return items
-    
-    async def find_events_by_name_match(self, access_token, refresh_token, client_id, client_secret, token_uri, 
-                                      query, max_results=20):
-        """Get events and return minimal info to use with GPT for matching."""
-        service = self._get_calendar_service(access_token, refresh_token, client_id, client_secret, token_uri)
-        
-        # Look at upcoming events (next 30 days)
-        now = datetime.datetime.utcnow()
-        time_min = now.isoformat() + "Z"
-        time_max = (now + datetime.timedelta(days=30)).isoformat() + "Z"
-        
-        # Get calendar events
-        events = await self._get_events(
-            service, 
-            time_min=time_min, 
-            time_max=time_max, 
-            max_results=max_results
-        )
-        
-        # Extract minimal info for each event
-        minimal_events = self._extract_minimal_event_info(events)
-        
-        return {
-            "original_query": query,
-            "events": minimal_events
-        }
-
-    async def find_event_id(self, access_token, refresh_token, client_id, client_secret, token_uri, 
-                          query=None, max_results=20):
-        """Find event IDs matching the query or all upcoming events."""
-        service = self._get_calendar_service(access_token, refresh_token, client_id, client_secret, token_uri)
-        
-        # Look at upcoming events (next 30 days)
-        now = datetime.datetime.utcnow()
-        time_min = now.isoformat() + "Z"
-        time_max = (now + datetime.timedelta(days=30)).isoformat() + "Z"
-        
-        # Get calendar events
-        events = await self._get_events(
-            service, 
-            time_min=time_min, 
-            time_max=time_max, 
-            max_results=max_results,
-            q=query
-        )
-        
-        # Extract just the IDs
-        return [event.get("id") for event in events if event.get("id")]
-    
-    async def get_event_by_id(self, access_token, refresh_token, client_id, client_secret, token_uri, event_id):
+    async def get_event_by_id(self, event_id, **auth_params):
         """Get a specific event by ID."""
-        service = self._get_calendar_service(access_token, refresh_token, client_id, client_secret, token_uri)
+        service = self._get_calendar_service(**auth_params)
         try:
             return service.events().get(calendarId="primary", eventId=event_id).execute()
         except Exception as e:
             print(f"Error getting event by ID: {e}")
             return None
     
-    async def create_event(self, access_token, refresh_token, client_id, client_secret, token_uri, 
-                         summary, location=None, description=None, start_date=None, start_time=None,
-                         end_date=None, end_time=None, timezone="UTC", all_day=False, 
-                         recurrence_rule=None, attendees=None, reminders=None):
-        """Create a new calendar event."""
-        service = self._get_calendar_service(access_token, refresh_token, client_id, client_secret, token_uri)
+    async def delete_events(self, event_ids=None, time_range=None, query=None, **auth_params):
+        """
+        Unified method to delete events by various criteria.
         
-        # Create event dictionary
-        event = {'summary': summary}
-        
-        # Handle optional fields
-        if location:
-            event['location'] = location
-        if description:
-            event['description'] = description
+        Args:
+            event_ids: List of event IDs to delete
+            time_range: Time range to delete events from (see get_events for format)
+            query: Query string to match events to delete
+            **auth_params: Authentication parameters
             
-        # Handle date/time
-        if all_day:
-            event['start'] = {'date': start_date}
-            event['end'] = {'date': end_date}
-        else:
-            # Format time strings
-            start_time = self._normalize_time_format(start_time)
-            end_time = self._normalize_time_format(end_time)
-                
-            start_datetime = f"{start_date}T{start_time}"
-            end_datetime = f"{end_date}T{end_time}"
-            
-            # Ensure timezone information is included
-            if not start_datetime.endswith('Z'):
-                start_datetime = f"{start_datetime}Z"
-            if not end_datetime.endswith('Z'):
-                end_datetime = f"{end_datetime}Z"
-                
-            event['start'] = {'dateTime': start_datetime, 'timeZone': timezone}
-            event['end'] = {'dateTime': end_datetime, 'timeZone': timezone}
+        Returns:
+            Results of the delete operation
+        """
+        service = self._get_calendar_service(**auth_params)
         
-        # Handle additional options
-        if recurrence_rule:
-            event['recurrence'] = [f'RRULE:{recurrence_rule}']
-        
-        if attendees:
-            event['attendees'] = [{'email': email} for email in attendees]
-        
-        event['reminders'] = reminders or {'useDefault': True}
-        
-        # Create the event
-        created_event = service.events().insert(
-            calendarId='primary',
-            body=event,
-            sendUpdates='all'
-        ).execute()
-
-        print(f"Event created: {created_event.get('htmlLink')}")
-        return created_event
-    
-    async def delete_event(self, access_token, refresh_token, client_id, client_secret, token_uri, event_id):
-        """Delete an event by ID."""
-        service = self._get_calendar_service(access_token, refresh_token, client_id, client_secret, token_uri)
-        try:
-            # Try simple delete first
-            service.events().delete(calendarId='primary', eventId=event_id).execute()
-            return {"success": True, "message": "Event deleted successfully"}
-        except Exception as e:
-            try:
-                # If simple delete fails, try handling it as a recurring event
-                event = service.events().get(calendarId='primary', eventId=event_id).execute()
-                event['status'] = 'cancelled'
-                service.events().update(calendarId='primary', eventId=event_id, body=event).execute()
-                return {"success": True, "message": "Recurring event cancelled successfully"}
-            except Exception as nested_e:
-                return {"success": False, "message": f"Failed to delete event: {str(nested_e)}"}
-    
-    async def update_event(self, access_token, refresh_token, client_id, client_secret, token_uri, 
-                         event_id, summary=None, location=None, description=None, 
-                         start_date=None, start_time=None, end_date=None, end_time=None, 
-                         timezone=None, all_day=None, attendees=None):
-        """Update an existing event."""
-        service = self._get_calendar_service(access_token, refresh_token, client_id, client_secret, token_uri)
-        
-        try:
-            # Get the existing event
-            event = service.events().get(calendarId='primary', eventId=event_id).execute()
-            
-            # Update fields if provided
-            if summary:
-                event['summary'] = summary
-            if location:
-                event['location'] = location
-            if description:
-                event['description'] = description
-                
-            # Handle date/time updates
-            if all_day is not None:
-                if all_day:
-                    # Convert to all-day event
-                    event['start'] = {'date': start_date or event['start'].get('date')}
-                    event['end'] = {'date': end_date or event['end'].get('date')}
-                elif start_date and end_date:
-                    # Convert to timed event
-                    start_time = self._normalize_time_format(start_time or '00:00:00')
-                    end_time = self._normalize_time_format(end_time or '23:59:59')
-                    
-                    start_datetime = f"{start_date}T{start_time}"
-                    end_datetime = f"{end_date}T{end_time}"
-                    
-                    if not start_datetime.endswith('Z'):
-                        start_datetime = f"{start_datetime}Z"
-                    if not end_datetime.endswith('Z'):
-                        end_datetime = f"{end_datetime}Z"
-                        
-                    event['start'] = {'dateTime': start_datetime, 'timeZone': timezone or 'UTC'}
-                    event['end'] = {'dateTime': end_datetime, 'timeZone': timezone or 'UTC'}
+        # Get IDs of events to delete if not directly provided
+        if not event_ids:
+            if time_range or query:
+                event_ids = await self.get_events(
+                    **auth_params,
+                    time_range=time_range,
+                    query=query,
+                    id_only=True
+                )
             else:
-                # Just update the times without changing event type
-                if 'date' in event['start'] and (start_date or end_date):
-                    # All-day event - just update dates
-                    if start_date:
-                        event['start']['date'] = start_date
-                    if end_date:
-                        event['end']['date'] = end_date
-                elif 'dateTime' in event['start'] and (start_date or start_time or end_date or end_time):
-                    # Timed event - format datetime strings
-                    if start_date or start_time:
-                        curr_start = event['start']['dateTime'].replace('Z', '')
-                        curr_start_date, curr_start_time = curr_start.split('T')
-                        new_start_date = start_date or curr_start_date
-                        new_start_time = self._normalize_time_format(start_time or curr_start_time)
-                        event['start']['dateTime'] = f"{new_start_date}T{new_start_time}Z"
-                        
-                    if end_date or end_time:
-                        curr_end = event['end']['dateTime'].replace('Z', '')
-                        curr_end_date, curr_end_time = curr_end.split('T')
-                        new_end_date = end_date or curr_end_date
-                        new_end_time = self._normalize_time_format(end_time or curr_end_time)
-                        event['end']['dateTime'] = f"{new_end_date}T{new_end_time}Z"
-            
-            # Update timezone if provided
-            if timezone:
-                if 'timeZone' in event['start']:
-                    event['start']['timeZone'] = timezone
-                if 'timeZone' in event['end']:
-                    event['end']['timeZone'] = timezone
-            
-            # Update attendees if provided
-            if attendees:
-                event['attendees'] = [{'email': email} for email in attendees]
-            
-            updated_event = service.events().update(
-                calendarId='primary',
-                eventId=event_id,
-                body=event,
-                sendUpdates='all'
-            ).execute()
-            
-            return updated_event
-            
-        except Exception as e:
-            print(f"Error updating event: {e}")
-            return {"error": str(e)}
+                return {"success": False, "message": "No criteria provided for deletion"}
+        
+        if not event_ids:
+            return {"success": False, "message": "No matching events found to delete"}
+        
+        # Delete the events
+        results = {
+            "success": True,
+            "deleted_count": 0,
+            "failed_count": 0,
+            "details": []
+        }
+        
+        for event_id in event_ids:
+            try:
+                # Try regular delete first
+                service.events().delete(calendarId='primary', eventId=event_id).execute()
+                results["deleted_count"] += 1
+                results["details"].append({"id": event_id, "status": "deleted"})
+                
+            except Exception as e:
+                # If regular delete fails, try handling as recurring event
+                try:
+                    event = service.events().get(calendarId='primary', eventId=event_id).execute()
+                    event['status'] = 'cancelled'
+                    service.events().update(calendarId='primary', eventId=event_id, body=event).execute()
+                    results["deleted_count"] += 1
+                    results["details"].append({"id": event_id, "status": "cancelled (recurring)"})
+                    
+                except Exception as nested_e:
+                    results["failed_count"] += 1
+                    results["details"].append({
+                        "id": event_id, 
+                        "status": "failed", 
+                        "error": str(nested_e)
+                    })
+        
+        # Set overall success based on results
+        if results["failed_count"] > 0:
+            if results["deleted_count"] == 0:
+                results["success"] = False
+                results["message"] = "Failed to delete any events"
+            else:
+                results["message"] = f"Deleted {results['deleted_count']} events, {results['failed_count']} failed"
+        else:
+            results["message"] = f"Successfully deleted {results['deleted_count']} events"
+        
+        return results
+    
+    # ===== BACKWARD COMPATIBILITY METHODS =====
+    
+    # These methods maintain the same interface but delegate to the core methods
+    
+    # GET
+    async def get_event_test_connection(self, **auth_params):
+        """Test connection by getting a few upcoming events."""
+        return await self.get_events(**auth_params, time_range="test")
+
+    async def get_events_by_date(self, date, **auth_params):
+        """Get events for a specific date."""
+        return await self.get_events(**auth_params, time_range={"start": date, "end": self._format_datetime(date, add_days=1)})
+
+    async def get_events_by_week(self, start_date, **auth_params):
+        """Get events for a week starting from the given date."""
+        return await self.get_events(**auth_params, time_range={"start": start_date, "end": self._format_datetime(start_date, add_days=7)})
+
+    async def get_events_in_custom_range(self, start_date, end_date, **auth_params):
+        """Get events within a custom date range."""
+        return await self.get_events(**auth_params, time_range={"start": start_date, "end": end_date})
+    
+    async def get_event_by_name(self, name, max_results=10, time_min=None, exact_match=False, **auth_params):
+        """Search for events by name/summary."""
+        time_range = {"start": time_min} if time_min else None
+        events = await self.get_events(**auth_params, time_range=time_range, query=name, max_results=max_results)
+        
+        # Filter for exact matches if requested
+        if exact_match and events:
+            events = [event for event in events if event.get("summary", "").lower() == name.lower()]
+        
+        return events
+    
+    # FIND (extra GET)
+    async def find_events_by_name_match(self, query, max_results=20, id_only=False, **auth_params): 
+        """Get events and return minimal info to use with GPT for matching."""
+        if id_only:
+            return await self.get_events(**auth_params, query=query, max_results=max_results, id_only=True)
+        else:
+            return await self.get_events(**auth_params, query=query, max_results=max_results, minimal=True)
+
+    async def find_event_id(self, query=None, max_results=20, **auth_params):
+        """Find event IDs matching the query or all upcoming events."""
+        return await self.get_events(**auth_params, query=query, max_results=max_results, id_only=True)
+    
+    # DELETE
+    async def delete_event_by_name(self, query, **auth_params):
+        """Delete events matching a query."""
+        return await self.delete_events(query=query, **auth_params)
+    
+    async def delete_event_by_id(self, service, id_list):
+        """Legacy method - delegates to delete_events."""
+        # This is a bit special as it takes a service directly
+        # We'll adapt by extracting auth params and passing event_ids
+        results = {
+            "success": True,
+            "deleted_count": 0,
+            "failed_count": 0,
+            "details": []
+        }
+        
+        for event_id in id_list:
+            try:
+                # Try regular delete first
+                service.events().delete(calendarId='primary', eventId=event_id).execute()
+                results["deleted_count"] += 1
+                results["details"].append({"id": event_id, "status": "deleted"})
+                
+            except Exception as e:
+                # If regular delete fails, try handling as recurring event
+                try:
+                    event = service.events().get(calendarId='primary', eventId=event_id).execute()
+                    event['status'] = 'cancelled'
+                    service.events().update(calendarId='primary', eventId=event_id, body=event).execute()
+                    results["deleted_count"] += 1
+                    results["details"].append({"id": event_id, "status": "cancelled (recurring)"})
+                    
+                except Exception as nested_e:
+                    results["failed_count"] += 1
+                    results["details"].append({
+                        "id": event_id, 
+                        "status": "failed", 
+                        "error": str(nested_e)
+                    })
+        
+        # Set overall success based on results
+        if results["failed_count"] > 0:
+            if results["deleted_count"] == 0:
+                results["success"] = False
+                results["message"] = "Failed to delete any events"
+            else:
+                results["message"] = f"Deleted {results['deleted_count']} events, {results['failed_count']} failed"
+        else:
+            results["message"] = f"Successfully deleted {results['deleted_count']} events"
+        
+        return results
+
+    async def delete_event_by_date(self, date, **auth_params):
+        """Delete events on a specific date."""
+        return await self.delete_events(time_range={"start": date, "end": self._format_datetime(date, add_days=1)}, **auth_params)
 
 calendar = CalendarService()

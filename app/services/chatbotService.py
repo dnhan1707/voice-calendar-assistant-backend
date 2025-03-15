@@ -1,6 +1,7 @@
 from openai import OpenAI
 import os
 from dotenv import load_dotenv
+import datetime
 
 load_dotenv()
 
@@ -10,12 +11,22 @@ client.api_key = api_key
 
 class ChatBot:
     def __init__(self):
-        self.prompt = '''
-            You are a natural language processor that classifies user requests to fetch or create calendar events. Analyze the user's input and classify it 
-            into one of the following query types:
+        # Get the current date and calculate examples dynamically
+        today = datetime.datetime.now()
+        tomorrow = (today + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+        next_week_start = (today + datetime.timedelta(days=7)).strftime("%Y-%m-%d")
+        custom_range_start = (today + datetime.timedelta(days=14)).strftime("%Y-%m-%d")
+        custom_range_end = (today + datetime.timedelta(days=19)).strftime("%Y-%m-%d")
+        
+        self.prompt = f'''
+            You are a natural language processor that classifies user requests to fetch or create calendar events. 
+            Today's date is {today.strftime("%Y-%m-%d")}. Always calculate dates based on this current date.
+            
+            Analyze the user's input and classify it into one of the following query types:
 
             1. **"date"** → If the user asks for events on a specific day.
             - Extract the date in **YYYY-MM-DD** format.
+            - For relative terms: "today" = {today.strftime("%Y-%m-%d")}, "tomorrow" = {tomorrow}, etc.
 
             2. **"week"** → If the user asks for events in a week.
             - Extract the start date of the week in **YYYY-MM-DD** format.
@@ -37,46 +48,45 @@ class ChatBot:
 
             5. **"talk"** → For general conversation not related to calendar functions.
 
-            Also, include the extracted date(s) and other parameters in the output.
+            For all date references, always calculate the actual date based on today being {today.strftime("%Y-%m-%d")}.
 
             ### **Examples:**
-            1. **Input:** "What events do I have on March 3rd?"
-            - **Output:** `{ "query_type": "date", "date": "2025-03-03" }`
+            1. **Input:** "What events do I have on March 15th?"
+            - **Output:** `{{ "query_type": "date", "date": "2025-03-15" }}`
 
             2. **Input:** "Show me my schedule for this week."
-            - **Output:** `{ "query_type": "week", "start_date": "2025-02-24" }`
+            - **Output:** `{{ "query_type": "week", "start_date": "{today.strftime("%Y-%m-%d")}" }}`
 
             3. **Input:** "What events do I have between April 10 and April 15?"
-            - **Output:** `{ "query_type": "range", "start_date": "2025-04-10", "end_date": "2025-04-15" }`
+            - **Output:** `{{ "query_type": "range", "start_date": "2025-04-10", "end_date": "2025-04-15" }}`
 
             4. **Input:** "Tell me my meetings next week."
-            - **Output:** `{ "query_type": "week", "start_date": "2025-03-03" }`
+            - **Output:** `{{ "query_type": "week", "start_date": "{next_week_start}" }}`
 
             5. **Input:** "Create a meeting with the marketing team tomorrow at 2pm until 3pm."
-            - **Output:** `{ "query_type": "create", "summary": "Meeting with marketing team", "start_date": "2025-03-02", "end_date": "2025-03-02", "start_time": "14:00", "end_time": "15:00" }`
+            - **Output:** `{{ "query_type": "create", "summary": "Meeting with marketing team", "start_date": "{tomorrow}", "end_date": "{tomorrow}", "start_time": "14:00", "end_time": "15:00" }}`
 
-            6. **Input:** "Schedule a dentist appointment on March 15 from 10am to 11:30am at Smile Dental Clinic."
-            - **Output:** `{ "query_type": "create", "summary": "Dentist appointment", "location": "Smile Dental Clinic", "start_date": "2025-03-15", "end_date": "2025-03-15", "start_time": "10:00", "end_time": "11:30" }`
-            
-            7. **Input:** "Add an all-day conference on April 5th called AI Summit."
-            - **Output:** `{ "query_type": "create", "summary": "AI Summit", "start_date": "2025-04-05", "end_date": "2025-04-05", "all_day": true }`
+            6. **Input:** "What's on my calendar today?"
+            - **Output:** `{{ "query_type": "date", "date": "{today.strftime("%Y-%m-%d")}" }}`
+
+            7. **Input:** "Add an all-day conference tomorrow called AI Summit."
+            - **Output:** `{{ "query_type": "create", "summary": "AI Summit", "start_date": "{tomorrow}", "end_date": "{tomorrow}", "all_day": true }}`
 
             8. **Input:** "Hey can you tell a joke"
-            - **Output:** `{ "query_type": "talk" }`
+            - **Output:** `{{ "query_type": "talk" }}`
 
-            9. **Input:** "Show my schedule from March 1st to March 7th."
-            - **Output:** `{ "query_type": "range", "start_date": "2025-03-01", "end_date": "2025-03-07" }`
+            9. **Input:** "Show my schedule from tomorrow to next Saturday."
+            - **Output:** `{{ "query_type": "range", "start_date": "{tomorrow}", "end_date": "{(today + datetime.timedelta(days=(5-today.weekday()+7)%7)).strftime("%Y-%m-%d")}" }}`
 
             10. **Input:** "Is there any Work on my schedule?"
-            - **Output:** `{ "query_type": "find"}`
+            - **Output:** `{{ "query_type": "find"}}`
             
-            11. **Input** "Delete my work schedule on next Tuesday"
-            - **Output:** `{ "query_type": "delete"}` 
+            11. **Input:** "Delete my work schedule on next Tuesday"
+            - **Output:** `{{ "query_type": "delete"}}` 
 
             ### **User Input:**
-            "{user_input}"
 
-            ### **Output:**
+            ### **Output (raw JSON only):**
         '''
 
 
