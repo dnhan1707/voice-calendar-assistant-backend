@@ -103,20 +103,20 @@ async def talk_with_model(request: Request):
         
         elif query_type == "delete":
             # Handle event deletion - determine if we're deleting by name or date
-            if result.get("event_name"):
+            # if result.get("event_name"):
                 # Delete by name/search term
-                delete_result = await calendar.delete_events(
-                    **common_params,
-                    query=result.get("event_name")
-                )
-            elif result.get("date"):
-                # Delete events on a specific date
-                delete_result = await calendar.delete_events(
-                    **common_params,
-                    time_range={"start": result.get("date"), "end": result.get("date")}
-                )
-            else:
-                return {"error": "Missing criteria for deletion. Need event_name or date."}
+            delete_result = await calendar.delete_events(
+                **common_params,
+                query=user_input
+            )
+            # elif result.get("date"):
+            #     # Delete events on a specific date
+            #     delete_result = await calendar.delete_events(
+            #         **common_params,
+            #         time_range={"start": result.get("date"), "end": result.get("date")}
+            #     )
+            # else:
+            #     return {"error": "Missing criteria for deletion. Need event_name or date."}
                 
             # Format the response for the user
             if delete_result.get("success"):

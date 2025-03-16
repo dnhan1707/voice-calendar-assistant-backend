@@ -194,7 +194,7 @@ class CalendarService:
             print(f"Error getting event by ID: {e}")
             return None
     
-    async def delete_events(self, event_ids=None, time_range=None, query=None, **auth_params):
+    async def delete_events(self, time_range=None, query=None, **auth_params):
         """
         Unified method to delete events by various criteria.
         
@@ -208,7 +208,7 @@ class CalendarService:
             Results of the delete operation
         """
         service = self._get_calendar_service(**auth_params)
-        
+        event_ids = await self.find_events_by_name_match(query=query, id_only=True, **auth_params)
         # Get IDs of events to delete if not directly provided
         if not event_ids:
             if time_range or query:

@@ -82,7 +82,7 @@ class ChatBot:
             - **Output:** `{{ "query_type": "find"}}`
             
             11. **Input:** "Delete my work schedule on next Tuesday"
-            - **Output:** `{{ "query_type": "delete"}}` 
+            - **Output:** `{{ "query_type": "delete", "start_date": "2025-03-18", "end_date": "2025-03-18"}}` 
 
             ### **User Input:**
 
