@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Request
 from app.services.chatbotService import chatbot
 from app.services.calendarService import calendar
+
 import json
 import os
 import datetime
@@ -49,86 +50,29 @@ async def talk_with_model(request: Request):
             "token_uri": TOKEN_URI
         }
 
-        query_type = result.get("query_type")
-        
-        # Handle different types of calendar queries
-        if query_type == "date":
-            # Get events for a specific date
-            calendar_events = await calendar.get_events(
-                **common_params, 
-                time_range={"start": result["date"], "end": result["date"]},
-                max_results=20
-            )
-            return await chatbot.discuss_about_calendar(calendar_events, user_input)
-        
-        elif query_type == "week":
-            # Get events for a week
-            calendar_events = await calendar.get_events(
-                **common_params, 
-                time_range={"start": result["start_date"]},
-                max_results=50
-            )
-            return await chatbot.discuss_about_calendar(calendar_events, user_input)
-        
-        elif query_type == "range":
-            # Get events for a custom date range
-            calendar_events = await calendar.get_events(
-                **common_params, 
-                time_range={"start": result["start_date"], "end": result["end_date"]},
-                max_results=50
-            )
-            return await chatbot.discuss_about_calendar(calendar_events, user_input)
-        
-        elif query_type == "find":
-            # Find events matching a name/description
-            events_data = await calendar.get_events(
-                **common_params, 
-                query=user_input,
-                max_results=20,
-                minimal=True
-            )
-            
-            # Let GPT find the best matching event
-            match_result = await chatbot.find_best_event_match(events_data, user_input)
-            print("Match result: ", match_result)
+        endpoint = result.get("endpoint")
+        query_type = result.get("query-type")
 
-            info = {
-                "success": match_result.get("found", False),
-                "message": (f"Found event: {match_result['event']['title']} at {match_result['event']['time']}" 
-                          if match_result.get("found", False) else match_result.get("message", "No matching events found")),
-                "event": match_result.get("event"),
-                "explanation": match_result.get("explanation")
-            }
-            return await chatbot.create_meaningful_response(info)
-        
-        elif query_type == "delete":
-            # Handle event deletion - determine if we're deleting by name or date
-            # if result.get("event_name"):
-                # Delete by name/search term
-            delete_result = await calendar.delete_events(
-                **common_params,
-                query=user_input
-            )
-            # elif result.get("date"):
-            #     # Delete events on a specific date
-            #     delete_result = await calendar.delete_events(
-            #         **common_params,
-            #         time_range={"start": result.get("date"), "end": result.get("date")}
-            #     )
-            # else:
-            #     return {"error": "Missing criteria for deletion. Need event_name or date."}
-                
-            # Format the response for the user
-            if delete_result.get("success"):
-                message = delete_result.get("message", f"Successfully deleted {delete_result.get('deleted_count', 0)} events")
-                return {"success": True, "message": message, "details": delete_result.get("details", [])}
+        print(f'Endpoint: {endpoint}')
+        print(f'Query: {query_type}')
+
+        # Handle different types of calendar queries
+        if endpoint == "get":
+            # Get events for a specific date
+            if(query_type == 'date'):
+                calendar_events = await calendar.get_event_by_date(
+                    **common_params, 
+                    time_range={"date": result["date"]},
+                )
+                return calendar_events
+            elif(query_type == 'custom'):
+                calendar_events = await calendar.get_event_custom_range(
+                    **common_params, 
+                    time_range={"start_date": result["start_date"], "end_date": result["end_date"]},
+                )
+                return calendar_events
             else:
-                return {"success": False, "message": delete_result.get("message", "Failed to delete events")}
-        
-        elif query_type == "talk":
-            # Handle general conversation
-            return await chatbot.normal_discussion(user_input)
-        
+                return "Unknown Query Type"
         else:
             return {"error": "Could not determine event query type"}
     

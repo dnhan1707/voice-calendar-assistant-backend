@@ -13,57 +13,80 @@ class ChatBot:
     def __init__(self):
         # Get the current date and calculate examples dynamically
         today = datetime.datetime.now()
-        # tomorrow = (today + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
-        # next_week_start = (today + datetime.timedelta(days=7)).strftime("%Y-%m-%d")
-        # custom_range_start = (today + datetime.timedelta(days=14)).strftime("%Y-%m-%d")
-        # custom_range_end = (today + datetime.timedelta(days=19)).strftime("%Y-%m-%d")
+        tomorrow = (today + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+        next_week_start = (today + datetime.timedelta(days=7)).strftime("%Y-%m-%d")
+        custom_range_start = (today + datetime.timedelta(days=14)).strftime("%Y-%m-%d")
+        custom_range_end = (today + datetime.timedelta(days=19)).strftime("%Y-%m-%d")
         
         self.prompt = f'''
-            You are an intelligent assistant that extracts date-related information from user requests 
-            and classifies them correctly. Today's date is **{today}**. You must **interpret all relative 
-            date expressions** based on this date.
+            You are a natural language processor that classifies user requests to fetch or create calendar events. 
+            Today's date is {today.strftime("%Y-%m-%d")}. Always calculate dates based on this current date.
+            
+            Analyze the user's input and classify it into one of the following query types:
 
-            Your task:
-            - Identify whether the user is asking for a **specific date** or a **range of dates**.
-            - Convert natural language date expressions like "next Monday" or "this weekend" into actual dates.
-            - Classify the request under the correct endpoint.
-            - Output structured JSON with correct dates.
+            1. **"date"** → If the user asks for events on a specific day.
+            - Extract the date in **YYYY-MM-DD** format.
+            - For relative terms: "today" = {today.strftime("%Y-%m-%d")}, "tomorrow" = {tomorrow}, etc.
 
-            ### **Guidelines:**
-            1. **If the user specifies a single date**, return:
-            ```json
-            {{ "endpoint": "get", "query-type": "date", "date": "YYYY-MM-DD" }}
-            ```
+            2. **"week"** → If the user asks for events in a week.
+            - Extract the start date of the week in **YYYY-MM-DD** format.
 
-            2. **If the user specifies a date range**, return:
-            ```json
-            {{ "endpoint": "get", "query-type": "custom", "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD" }}
-            ```
+            3. **"range"** → If the user asks for events within a custom date range.
+            - Extract both the **start date** and **end date** in **YYYY-MM-DD** format.
+            
+            4. **"create"** → If the user wants to create a new event.
+            - Extract event details including:
+            - summary (required): The title of the event
+            - start_date (required): Start date in YYYY-MM-DD format
+            - end_date (required): End date in YYYY-MM-DD format
+            - start_time (optional): Start time in HH:MM format (24-hour)
+            - end_time (optional): End time in HH:MM format (24-hour)
+            - location (optional): The location of the event
+            - description (optional): Description of the event
+            - all_day (optional): Whether this is an all-day event (true/false)
+            - attendees (optional): List of email addresses
 
-            3. **Relative Date Conversions:**
-            - "today" → {today}
-            - "tomorrow" → { (datetime.datetime.now() + datetime.timedelta(days=1)).strftime("%Y-%m-%d") }
-            - "this week" → From **Monday** of this week to **Sunday** of this week.
-            - "next week" → From **Monday** of next week to **Sunday** of next week.
-            - "next Monday" → The upcoming Monday from today.
-            - "this weekend" → Saturday & Sunday of this week.
+            5. **"talk"** → For general conversation not related to calendar functions.
+
+            For all date references, always calculate the actual date based on today being {today.strftime("%Y-%m-%d")}.
 
             ### **Examples:**
             1. **Input:** "What events do I have on March 15th?"
-            - **Output:** {{ "endpoint": "get", "query-type": "date", "date": "2025-03-15" }}
+            - **Output:** `{{ "query_type": "date", "date": "2025-03-15" }}`
 
-            2. **Input:** "Show me my schedule for next Monday to next Tuesday."
-            - **Output:** {{ "endpoint": "get", "query-type": "custom", "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD" }}
+            2. **Input:** "Show me my schedule for this week."
+            - **Output:** `{{ "query_type": "week", "start_date": "{today.strftime("%Y-%m-%d")}" }}`
 
-            3. **Input:** "Do I have any meetings this weekend?"
-            - **Output:** {{ "endpoint": "get", "query-type": "custom", "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD" }}
+            3. **Input:** "What events do I have between April 10 and April 15?"
+            - **Output:** `{{ "query_type": "range", "start_date": "2025-04-10", "end_date": "2025-04-15" }}`
 
-            4. **Input:** "Show me events for the first week of April."
-            - **Output:** {{ "endpoint": "get", "query-type": "custom", "start_date": "2025-04-01", "end_date": "2025-04-07" }}
+            4. **Input:** "Tell me my meetings next week."
+            - **Output:** `{{ "query_type": "week", "start_date": "{next_week_start}" }}`
 
-            **User Input:**
+            5. **Input:** "Create a meeting with the marketing team tomorrow at 2pm until 3pm."
+            - **Output:** `{{ "query_type": "create", "summary": "Meeting with marketing team", "start_date": "{tomorrow}", "end_date": "{tomorrow}", "start_time": "14:00", "end_time": "15:00" }}`
+
+            6. **Input:** "What's on my calendar today?"
+            - **Output:** `{{ "query_type": "date", "date": "{today.strftime("%Y-%m-%d")}" }}`
+
+            7. **Input:** "Add an all-day conference tomorrow called AI Summit."
+            - **Output:** `{{ "query_type": "create", "summary": "AI Summit", "start_date": "{tomorrow}", "end_date": "{tomorrow}", "all_day": true }}`
+
+            8. **Input:** "Hey can you tell a joke"
+            - **Output:** `{{ "query_type": "talk" }}`
+
+            9. **Input:** "Show my schedule from tomorrow to next Saturday."
+            - **Output:** `{{ "query_type": "range", "start_date": "{tomorrow}", "end_date": "{(today + datetime.timedelta(days=(5-today.weekday()+7)%7)).strftime("%Y-%m-%d")}" }}`
+
+            10. **Input:** "Is there any Work on my schedule?"
+            - **Output:** `{{ "query_type": "find"}}`
             
-            **Output (JSON only):**
+            11. **Input:** "Delete my work schedule on next Tuesday"
+            - **Output:** `{{ "query_type": "delete", "date": "2025-03-18"}}` 
+
+            ### **User Input:**
+
+            ### **Output (raw JSON only):**
         '''
 
 
@@ -187,7 +210,7 @@ class ChatBot:
                 {"role": "assistant", "content": f'You are a Voice AI Calendar Assistant'},
                     {
                         "role": "user",
-                        "content": f'Here is the info: {input}. Please simplify this and provide a user friendly response in 1 sentence'
+                        "content": f'Here is the info: {input}. Please simplify this and provide a user friendly response.'
                     }
                 ]
             )
