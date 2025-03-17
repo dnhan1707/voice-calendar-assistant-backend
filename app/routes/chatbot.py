@@ -3,7 +3,6 @@ from app.services.chatbotService import chatbot
 from app.services.calendarService import calendar
 import json
 import os
-import datetime
 
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")

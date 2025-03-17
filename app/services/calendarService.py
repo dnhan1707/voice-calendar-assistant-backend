@@ -2,12 +2,13 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from app.services.chatbotService import chatbot
 import datetime
+from typing import List, Dict, Any, Optional, Union
 
 class CalendarService:
     def __init__(self):
         pass
     
-    def _get_calendar_service(self, access_token, refresh_token, client_id, client_secret, token_uri):
+    def _get_calendar_service(self, access_token: str, refresh_token: str, client_id: str, client_secret: str, token_uri: str) -> Any:
         """Helper method to create credentials and return a calendar service."""
         creds = Credentials(
             token=access_token,
@@ -18,7 +19,7 @@ class CalendarService:
         )
         return build("calendar", "v3", credentials=creds)
     
-    def _format_datetime(self, date_str, time_str=None, add_days=0):
+    def _format_datetime(self, date_str: str, time_str: Optional[str] = None, add_days: int = 0) -> str:
         """Helper method to format date/time strings properly."""
         date_obj = datetime.datetime.strptime(date_str, "%Y-%m-%d")
         
@@ -33,7 +34,7 @@ class CalendarService:
             # Just return the ISO format with Z
             return date_obj.isoformat() + "Z"
     
-    def _extract_minimal_event_info(self, events):
+    def _extract_minimal_event_info(self, events: List[Dict[str, Any]]) -> List[Dict[str, str]]:
         """Extract only essential event information to minimize tokens."""
         if not events:
             return []
@@ -60,7 +61,7 @@ class CalendarService:
         
         return minimal_events
     
-    def _normalize_time_format(self, time_str):
+    def _normalize_time_format(self, time_str: Optional[str]) -> Optional[str]:
         """Normalize time format to ensure it has seconds and Z suffix if needed."""
         if not time_str:
             return None
@@ -74,7 +75,7 @@ class CalendarService:
 
     # ============================GET Functions============================
 
-    async def get_event_by_date(self, time_range=None, id_only=False, **auth_params):
+    async def get_event_by_date(self, time_range: Optional[Dict[str, str]] = None, id_only: bool = False, **auth_params: str) -> Union[List[str], str]:
         """Get events for a specific date."""
         print("Calling get event by date")
 
@@ -102,7 +103,7 @@ class CalendarService:
         minimal_events = self._extract_minimal_event_info(events)
         return await chatbot.create_meaningful_response(minimal_events)
 
-    async def get_event_custom_range(self, time_range=None, id_only=False, **auth_params):
+    async def get_event_custom_range(self, time_range: Optional[Dict[str, str]] = None, id_only: bool = False, **auth_params: str) -> Union[List[str], str]:
         """Get events within a custom date range."""
         print("Calling get event by range")
         print(f'Time range: {time_range}')
@@ -129,7 +130,7 @@ class CalendarService:
         minimal_events = self._extract_minimal_event_info(events)
         return await chatbot.create_meaningful_response(minimal_events)
 
-    async def get_event_by_name(self, query=None, time_range=None, minimal=True, id_only=False, **auth_params):
+    async def get_event_by_name(self, query: Optional[str] = None, time_range: Optional[Dict[str, str]] = None, minimal: bool = True, id_only: bool = False, **auth_params: str) -> Union[List[str], str]:
         """Get events by name match."""
         print("Calling get event by name")
         
@@ -138,10 +139,15 @@ class CalendarService:
         if query and time_range:
             # Find events with that query on that custom range
             if 'date' in time_range:
+                if id_only:
+                    return await self.get_event_by_date(time_range=time_range, id_only=True, **auth_params)
                 events = await self.get_event_by_date(time_range=time_range, **auth_params)
             else:
+                if id_only:
+                    return await self.get_event_custom_range(time_range=time_range, id_only=True, **auth_params)
                 events = await self.get_event_custom_range(time_range=time_range, **auth_params)
             return await chatbot.find_best_event_match(events, query)['message']
+        
         elif query:
             # Find any events match that query, max_result=10
             max_results = 10
@@ -157,20 +163,22 @@ class CalendarService:
             }
             events_result = service.events().list(**params).execute()
             events = events_result.get("items", [])
+            if(id_only):
+                return await chatbot.find_best_event_match(events, query, id_only=True)['message']
             return await chatbot.find_best_event_match(events, query)['message']
         else:
             return "Missing query and time_range"
         
-    # ============================CREATE Functions============================
+    # ============================CREATE Functions=========================
 
-    async def create_event(self, query=None, **auth_params):
+    async def create_event(self, query: Optional[str] = None, **auth_params: str) -> Dict[str, Any]:
         print("Calling create_event")
-        if(not query):
-            return "Missing user query"
+        if not query:
+            return {"error": "Missing user query"}
 
         service = self._get_calendar_service(**auth_params)
         # We need a function to extract param from query
-        new_event_params = await chatbot.extract_new_event_params(query)
+        new_event_params = await chatbot.extract_event_params(query)
         # Use those params to create new event
         event = {
             'summary': new_event_params.get('summary'),
@@ -201,5 +209,30 @@ class CalendarService:
         created_event = service.events().insert(calendarId='primary', body=event).execute()
         return {"success": True, "event": created_event}
 
+    # ============================DELETE Functions=========================
+    async def delete_event(self, query: Optional[str] = None, time_range: Optional[Dict[str, str]] = None, **auth_params: str) -> Union[List[str], str]:
+        print("Calling get delete event")
+        service = self._get_calendar_service(**auth_params)
+
+        # We need to find the events that match the name from query
+        # Extract the id of those event and put in a list
+
+        event_ids = await self.get_event_by_name(query=query, time_range=time_range, id_only=True, **auth_params)
+        if not event_ids:
+            return "No matching events found to delete."
+
+        # Delete the events
+        deleted_ids = []
+        for event_id in event_ids:
+            try:
+                service.events().delete(calendarId='primary', eventId=event_id).execute()
+                deleted_ids.append(event_id)
+            except Exception as e:
+                print(f"Failed to delete event {event_id}: {e}")
+
+        if len(deleted_ids) > 0:
+            return "Successfully delete requested events."
+        else:
+            return "Failed to delete any events."
 
 calendar = CalendarService()

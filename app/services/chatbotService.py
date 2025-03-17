@@ -1,6 +1,6 @@
 from openai import OpenAI
-import os
 from dotenv import load_dotenv
+import os
 import datetime
 import json
 
@@ -101,8 +101,7 @@ class ChatBot:
             )
         return completion.choices[0].message.content
     
-
-    async def find_best_event_match(self, events_data, user_query):
+    async def find_best_event_match(self, events_data, user_query, id_only=False):
         """Find the best matching event based on user query."""
         events = events_data.get("events", [])
         original_query = events_data.get("original_query", user_query)
@@ -160,6 +159,8 @@ class ChatBot:
                 print(f"Error parsing match number: {e}")
         
         if match_event:
+            if id_only:
+                return [match_event.get("id")]
             return {
                 "found": True,
                 "event": match_event,
