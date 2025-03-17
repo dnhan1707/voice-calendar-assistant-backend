@@ -2,6 +2,7 @@ from openai import OpenAI
 import os
 from dotenv import load_dotenv
 import datetime
+import json
 
 load_dotenv()
 
@@ -11,59 +12,52 @@ client.api_key = api_key
 
 class ChatBot:
     def __init__(self):
-        # Get the current date and calculate examples dynamically
         today = datetime.datetime.now()
-        # tomorrow = (today + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
-        # next_week_start = (today + datetime.timedelta(days=7)).strftime("%Y-%m-%d")
-        # custom_range_start = (today + datetime.timedelta(days=14)).strftime("%Y-%m-%d")
-        # custom_range_end = (today + datetime.timedelta(days=19)).strftime("%Y-%m-%d")
         
         self.prompt = f'''
-            You are an intelligent assistant that extracts date-related information from user requests 
-            and classifies them correctly. Today's date is **{today}**. You must **interpret all relative 
-            date expressions** based on this date.
+            You are a natural language processor that classifies user requests to fetch or create calendar events. 
+            Today's date is {today.strftime("%Y-%m-%d")}. Always calculate dates based on this current date.
+            
+            Analyze the user's input and classify it into one of the following query types:
 
-            Your task:
-            - Identify whether the user is asking for a **specific date** or a **range of dates**.
-            - Convert natural language date expressions like "next Monday" or "this weekend" into actual dates.
-            - Classify the request under the correct endpoint.
-            - Output structured JSON with correct dates.
+            1. **"date"** → If the user asks for events on a specific day.
+            - Extract the date in **YYYY-MM-DD** format.
+            - For relative terms: "today" = {today.strftime("%Y-%m-%d")}, "tomorrow" = {(today + datetime.timedelta(days=1)).strftime("%Y-%m-%d")}, etc.
 
-            ### **Guidelines:**
-            1. **If the user specifies a single date**, return:
-            ```json
-            {{ "endpoint": "get", "query-type": "date", "date": "YYYY-MM-DD" }}
-            ```
+            2. **"custom"** → If the user asks for events within a custom date range.
+            - Extract both the **start date** and **end date** in **YYYY-MM-DD** format.
+            - User may ask for week, month, etc.
 
-            2. **If the user specifies a date range**, return:
-            ```json
-            {{ "endpoint": "get", "query-type": "custom", "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD" }}
-            ```
+            3. **"create"** → If the user wants to create a new event.
+            - Extract event details including:
+            - summary (required): The title of the event
+            - start_date (required): Start date in YYYY-MM-DD format
+            - end_date (required): End date in YYYY-MM-DD format
+            - start_time (optional): Start time in HH:MM format (24-hour)
+            - end_time (optional): End time in HH:MM format (24-hour)
+            - location (optional): The location of the event
+            - description (optional): Description of the event
+            - all_day (optional): Whether this is an all-day event (true/false)
+            - attendees (optional): List of email addresses
 
-            3. **Relative Date Conversions:**
-            - "today" → {today}
-            - "tomorrow" → { (datetime.datetime.now() + datetime.timedelta(days=1)).strftime("%Y-%m-%d") }
-            - "this week" → From **Monday** of this week to **Sunday** of this week.
-            - "next week" → From **Monday** of next week to **Sunday** of next week.
-            - "next Monday" → The upcoming Monday from today.
-            - "this weekend" → Saturday & Sunday of this week.
+            For all date references, always calculate the actual date based on today being {today.strftime("%Y-%m-%d")}.
 
             ### **Examples:**
             1. **Input:** "What events do I have on March 15th?"
             - **Output:** {{ "endpoint": "get", "query-type": "date", "date": "2025-03-15" }}
 
-            2. **Input:** "Show me my schedule for next Monday to next Tuesday."
-            - **Output:** {{ "endpoint": "get", "query-type": "custom", "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD" }}
+            2. **Input:** "Show me my schedule for this week."
+            - **Output:** {{ "endpoint": "get", "query-type": "custom", "start_date": "{today.strftime("%Y-%m-%d")}", "end_date": "{(today + datetime.timedelta(days=7)).strftime("%Y-%m-%d")}" }}
 
-            3. **Input:** "Do I have any meetings this weekend?"
-            - **Output:** {{ "endpoint": "get", "query-type": "custom", "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD" }}
+            3. **Input:** "Create a meeting with the marketing team tomorrow at 2pm until 3pm."
+            - **Output:** {{ "endpoint": "create", "summary": "Meeting with marketing team", "start_date": "{(today + datetime.timedelta(days=1)).strftime("%Y-%m-%d")}", "end_date": "{(today + datetime.timedelta(days=1)).strftime("%Y-%m-%d")}", "start_time": "14:00", "end_time": "15:00" }}
 
-            4. **Input:** "Show me events for the first week of April."
-            - **Output:** {{ "endpoint": "get", "query-type": "custom", "start_date": "2025-04-01", "end_date": "2025-04-07" }}
+            4. **Input:** "Add an all-day conference tomorrow called AI Summit."
+            - **Output:** {{ "endpoint": "create", "summary": "AI Summit", "start_date": "{(today + datetime.timedelta(days=1)).strftime("%Y-%m-%d")}", "end_date": "{(today + datetime.timedelta(days=1)).strftime("%Y-%m-%d")}", "all_day": true }}
 
-            **User Input:**
-            
-            **Output (JSON only):**
+            ### **User Input:**
+
+            ### **Output (raw JSON only):**
         '''
 
 
@@ -192,6 +186,54 @@ class ChatBot:
                 ]
             )
         return completion.choices[0].message.content
+
+    async def extract_event_params(self, user_input: str) -> dict:
+        """Use GPT to extract event parameters from user input."""
+        prompt = f'''
+            You are a natural language processor that extracts event details from user requests.
+            Today's date is {datetime.datetime.now().strftime("%Y-%m-%d")}.
+            
+            Analyze the user's input and extract the following event details:
+            - summary (required): The title of the event
+            - start_date (required): Start date in YYYY-MM-DD format
+            - end_date (required): End date in YYYY-MM-DD format
+            - start_time (optional): Start time in HH:MM format (24-hour)
+            - end_time (optional): End time in HH:MM format (24-hour)
+            - location (optional): The location of the event
+            - description (optional): Description of the event
+            - all_day (optional): Whether this is an all-day event (true/false)
+            - attendees (optional): List of email addresses
+
+            For all date references, always calculate the actual date based on today being {datetime.datetime.now().strftime("%Y-%m-%d")}.
+            
+            ### **Examples:**
+            1. **Input:** "Create a meeting with the marketing team tomorrow at 2pm until 3pm."
+            - **Output:** {{ "summary": "Meeting with marketing team", "start_date": "{(datetime.datetime.now() + datetime.timedelta(days=1)).strftime("%Y-%m-%d")}", "end_date": "{(datetime.datetime.now() + datetime.timedelta(days=1)).strftime("%Y-%m-%d")}", "start_time": "14:00", "end_time": "15:00" }}
+
+            2. **Input:** "Add an all-day conference tomorrow called AI Summit."
+            - **Output:** {{ "summary": "AI Summit", "start_date": "{(datetime.datetime.now() + datetime.timedelta(days=1)).strftime("%Y-%m-%d")}", "end_date": "{(datetime.datetime.now() + datetime.timedelta(days=1)).strftime("%Y-%m-%d")}", "all_day": true }}
+
+            ### **User Input:**
+            {user_input}
+
+            ### **Output (raw JSON only):**
+        '''
+        
+        completion = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": user_input}
+            ]
+        )
+        
+        response = completion.choices[0].message.content
+        try:
+            event_params = json.loads(response)
+            return event_params
+        except json.JSONDecodeError:
+            return {"error": "Failed to parse event parameters from user input."}
+
 
     @staticmethod
     def format_calendar_events(events):

@@ -72,7 +72,7 @@ class CalendarService:
                 
         return time_str
 
-    # ============================Core Functions============================
+    # ============================GET Functions============================
 
     async def get_event_by_date(self, time_range=None, id_only=False, **auth_params):
         """Get events for a specific date."""
@@ -161,6 +161,45 @@ class CalendarService:
         else:
             return "Missing query and time_range"
         
+    # ============================CREATE Functions============================
+
+    async def create_event(self, query=None, **auth_params):
+        print("Calling create_event")
+        if(not query):
+            return "Missing user query"
+
+        service = self._get_calendar_service(**auth_params)
+        # We need a function to extract param from query
+        new_event_params = await chatbot.extract_new_event_params(query)
+        # Use those params to create new event
+        event = {
+            'summary': new_event_params.get('summary'),
+            'location': new_event_params.get('location'),
+            'description': new_event_params.get('description'),
+            'start': {
+                'dateTime': f"{new_event_params.get('start_date')}T{new_event_params.get('start_time', '00:00:00')}",
+                'timeZone': 'UTC',
+            },
+            'end': {
+                'dateTime': f"{new_event_params.get('end_date')}T{new_event_params.get('end_time', '23:59:59')}",
+                'timeZone': 'UTC',
+            },
+            'attendees': [{'email': email} for email in new_event_params.get('attendees', [])],
+            'reminders': {
+                'useDefault': False,
+                'overrides': [
+                    {'method': 'email', 'minutes': 24 * 60},
+                    {'method': 'popup', 'minutes': 10},
+                ],
+            },
+        }
+        
+        if new_event_params.get('all_day'):
+            event['start'] = {'date': new_event_params.get('start_date')}
+            event['end'] = {'date': new_event_params.get('end_date')}
+        
+        created_event = service.events().insert(calendarId='primary', body=event).execute()
+        return {"success": True, "event": created_event}
 
 
 calendar = CalendarService()

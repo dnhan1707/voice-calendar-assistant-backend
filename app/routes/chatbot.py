@@ -1,7 +1,6 @@
 from fastapi import APIRouter, HTTPException, Request
 from app.services.chatbotService import chatbot
 from app.services.calendarService import calendar
-
 import json
 import os
 import datetime
@@ -73,6 +72,13 @@ async def talk_with_model(request: Request):
                 return calendar_events
             else:
                 return "Unknown Query Type"
+        
+        elif endpoint == "create":
+                calendar_events = await calendar.create_event(
+                    **common_params, 
+                    query=query_type,
+                )
+
         else:
             return {"error": "Could not determine event query type"}
     
